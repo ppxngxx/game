@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Space Shooter</title>
+    <style>
+        body {
+            background: #111;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 30px;
+        }
+        #gameCanvas {
+            background: #000;
+            border: 2px solid #0ff;
+            box-shadow: 0 0 20px #0ff;
+        }
+        #score {
+            margin: 15px 0;
+            font-size: 1.2em;
+        }
+        #restartBtn {
+            display: none;
+            margin-top: 10px;
+            padding: 8px 20px;
+            font-size: 1em;
+            background: #0ff;
+            color: #111;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #restartBtn:hover {
+            background: #fff;
+            color: #0ff;
+        }
+        #shopContainer {
+            display: none;
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #222;
+            border: 2px solid #0ff;
+            border-radius: 10px;
+            padding: 24px 32px 16px 32px;
+            z-index: 10;
+            color: #fff;
+            min-width: 260px;
+        }
+        #shopContainer h2 {
+            margin: 0 0 10px 0;
+            color: #0ff;
+        }
+        #shopContainer .shop-item {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        #shopContainer button {
+            padding: 4px 12px;
+            font-size: 1em;
+            background: #0ff;
+            color: #111;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #shopContainer button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+        }
+        #shopCloseBtn {
+            margin-top: 12px;
+            background: #fff;
+            color: #0ff;
+        }
+        #shopBtn {
+            margin-bottom: 10px;
+            padding: 6px 18px;
+            font-size: 1em;
+            background: #0ff;
+            color: #111;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #shopBtn:hover {
+            background: #fff;
+            color: #0ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="score">Score: 0</div>
+        <button id="restartBtn">Restart</button>
+        <button id="shopBtn">ร้านค้า</button>
+    </div>
+    <div id="shopContainer">
+        <h2>ร้านค้า</h2>
+        <div class="shop-item">
+            <span>เพิ่มพลังชีวิต (10 เหรียญ)</span>
+            <button id="buyLifeBtn">ซื้อ</button>
+        </div>
+        <div class="shop-item">
+            <span>เพิ่มคะแนน +10 (5 เหรียญ)</span>
+            <button id="buyScoreBtn">ซื้อ</button>
+        </div>
+        <div class="shop-item" style="flex-direction:column;align-items:flex-start;">
+            <span style="margin-bottom:6px;">ซื้อปืนพิเศษ (20 เหรียญ)</span>
+            <div style="display:flex;align-items:center;">
+                <canvas id="gunPreview" width="60" height="30" style="background:#111;border:1px solid #0ff;border-radius:5px;margin-right:10px;"></canvas>
+                <button id="buyGunBtn">ซื้อ</button>
+                <button id="equipGunBtn" style="margin-left:6px;display:none;">ใช้งาน</button>
+            </div>
+        </div>
+        <div style="margin-top:10px;">
+            <span id="shopCoins">เหรียญ: 0</span>
+        </div>
+        <button id="shopCloseBtn">ปิดร้านค้า</button>
+    </div>
+    <script>
+        // --- Space Shooter Game ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Player
+        const player = {
+            x: canvas.width / 2 - 20,
+            y: canvas.height - 60,
+            w: 40,
+            h: 40,
+            speed: 6,
+            color: '#0ff'
+        };
+
+        // Bullets
+        let bullets = [];
+
+        // Enemies
+        let enemies = [];
+        let enemySpeed = 2;
+        let enemySpawnInterval = 1200;
+        let enemyTimer = 0;
+
+        // Score
+        let score = 0;
+        let coins = 0;
+        let isGameOver = false;
+
+        // Controls
+        let leftPressed = false;
+        let rightPressed = false;
+        let spacePressed = false;
+
+        // --- Enemy HP ---
+        function getRandomEnemySizeAndHP() {
+            // ขนาดสุ่ม 36-64 px, HP ตามขนาด
+            const minSize = 36, maxSize = 64;
+            const size = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
+            // HP: 1 + (ขนาด-36)/14 (เช่น 36=1, 50=2, 64=3)
+            const hp = Math.max(1, Math.round(1 + (size - minSize) / 14));
+            return { size, hp };
+        }
+
+        function drawPlayer() {
+            // วาดเป็นทหาร (หัว, ตัว, แขน, ขา)
+            ctx.save();
+            ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
+
+            // ตัว
+            ctx.fillStyle = '#0ff';
+            ctx.fillRect(-10, -10, 20, 28);
+
+            // หัว
+            ctx.beginPath();
+            ctx.arc(0, -16, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+
+            // แขนซ้าย
+            ctx.fillStyle = '#0ff';
+            ctx.fillRect(-16, 0, 6, 18);
+
+            // แขนขวา
+            ctx.fillRect(10, 0, 6, 18);
+
+            // ขาซ้าย
+            ctx.fillRect(-8, 18, 6, 14);
+
+            // ขาขวา
+            ctx.fillRect(2, 18, 6, 14);
+
+            // วาดหลอดพลังชีวิต (เหนือหัว)
+            ctx.restore();
+            ctx.save();
+            ctx.translate(player.x + player.w / 2, player.y + player.h / 2 - 28);
+            const maxLife = 10;
+            let lifeBarWidth = 40;
+            let lifeRatio = Math.min(playerLife / maxLife, 1);
+            ctx.fillStyle = '#f00';
+            ctx.fillRect(-lifeBarWidth/2, 0, lifeBarWidth, 6);
+            ctx.fillStyle = '#0f0';
+            ctx.fillRect(-lifeBarWidth/2, 0, lifeBarWidth * lifeRatio, 6);
+            ctx.strokeStyle = '#fff';
+            ctx.strokeRect(-lifeBarWidth/2, 0, lifeBarWidth, 6);
+            ctx.restore();
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = '#ff0';
+            bullets.forEach(bullet => {
+                ctx.fillRect(bullet.x, bullet.y, bullet.w, bullet.h);
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.save();
+                ctx.translate(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2);
+
+                // ตัว (ดำ)
+                ctx.fillStyle = '#222';
+                ctx.fillRect(-enemy.w/2 + 2, -enemy.h/2 + 6, enemy.w-4, enemy.h-12);
+
+                // หัว (ดำ)
+                ctx.beginPath();
+                ctx.arc(0, -enemy.h/2 + 10, enemy.w/2 - 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#222';
+                ctx.fill();
+
+                // หน้ากาก (ขาว)
+                ctx.beginPath();
+                ctx.ellipse(0, -enemy.h/2 + 10, enemy.w/2 - 2, 7, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+
+                // ตา (ดำ)
+                ctx.beginPath();
+                ctx.arc(-enemy.w/6, -enemy.h/2 + 10, 2, 0, Math.PI * 2);
+                ctx.arc(enemy.w/6, -enemy.h/2 + 10, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#222';
+                ctx.fill();
+
+                // แขน
+                ctx.fillStyle = '#222';
+                ctx.fillRect(-enemy.w/2 - 6, 0, 6, enemy.h/2 - 4);
+                ctx.fillRect(enemy.w/2, 0, 6, enemy.h/2 - 4);
+
+                // ขา
+                ctx.fillRect(-enemy.w/4, enemy.h/2 - 8, 6, enemy.h/4);
+                ctx.fillRect(enemy.w/8, enemy.h/2 - 8, 6, enemy.h/4);
+
+                // ถุงเงิน (เหลือง)
+                ctx.beginPath();
+                ctx.arc(0, enemy.h/2, enemy.w/5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff0';
+                ctx.fill();
+
+                // แถบ HP
+                ctx.fillStyle = '#f00';
+                ctx.fillRect(-enemy.w/2, -enemy.h/2 - 10, enemy.w, 6);
+                ctx.fillStyle = '#0f0';
+                ctx.fillRect(-enemy.w/2, -enemy.h/2 - 10, enemy.w * (enemy.hp/enemy.maxHp), 6);
+
+                ctx.restore();
+            });
+        }
+
+        function movePlayer() {
+            if (leftPressed && player.x > 0) player.x -= player.speed;
+            if (rightPressed && player.x + player.w < canvas.width) player.x += player.speed;
+        }
+
+        function moveBullets() {
+            bullets.forEach(bullet => bullet.y -= bullet.speed);
+            bullets = bullets.filter(bullet => bullet.y + bullet.h > 0);
+        }
+
+        function moveEnemies() {
+            enemies.forEach(enemy => enemy.y += enemy.speed);
+            enemies = enemies.filter(enemy => enemy.y < canvas.height + enemy.h);
+        }
+
+        function spawnEnemy() {
+            const { size, hp } = getRandomEnemySizeAndHP();
+            const w = size, h = size;
+            const x = Math.random() * (canvas.width - w);
+            enemies.push({ x, y: -h, w, h, speed: enemySpeed, hp: hp, maxHp: hp });
+        }
+
+        function checkCollisions() {
+            // Bullet hits enemy
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const b = bullets[i], e = enemies[j];
+                    if (
+                        b.x < e.x + e.w &&
+                        b.x + b.w > e.x &&
+                        b.y < e.y + e.h &&
+                        b.y + b.h > e.y
+                    ) {
+                        bullets.splice(i, 1);
+                        e.hp--;
+                        if (e.hp <= 0) {
+                            // กำหนดเหรียญตามขนาด
+                            let coin = 1;
+                            if (e.w >= 60) coin = 3;
+                            else if (e.w >= 48) coin = 2;
+                            coins += coin;
+                            enemies.splice(j, 1);
+                            score++;
+                            document.getElementById('score').textContent = 'Score: ' + score + ' | Coins: ' + coins;
+                        }
+                        break;
+                    }
+                }
+            }
+            // Enemy hits player
+            for (let i = 0; i < enemies.length; i++) {
+                const e = enemies[i];
+                if (
+                    player.x < e.x + e.w &&
+                    player.x + player.w > e.x &&
+                    player.y < e.y + e.h &&
+                    player.y + player.h > e.y
+                ) {
+                    playerLife--;
+                    enemies.splice(i, 1);
+                    if (playerLife <= 0) {
+                        gameOver();
+                    }
+                    return;
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawPlayer();
+            drawBullets();
+            drawEnemies();
+            movePlayer();
+            moveBullets();
+            moveEnemies();
+            checkCollisions();
+
+            // Spawn enemies
+            enemyTimer += 16;
+            if (enemyTimer > enemySpawnInterval) {
+                spawnEnemy();
+                enemyTimer = 0;
+                // Increase difficulty
+                if (enemySpawnInterval > 400) enemySpawnInterval -= 10;
+                if (enemySpeed < 8) enemySpeed += 0.05;
+            }
+        }
+
+        let playerLife = 10; // เริ่มต้นเต็มหลอด (maxLife = 10)
+        let gunOwned = false;
+        let gunEquipped = false;
+
+        function drawGunPreview() {
+            const gunCanvas = document.getElementById('gunPreview');
+            const gctx = gunCanvas.getContext('2d');
+            gctx.clearRect(0, 0, gunCanvas.width, gunCanvas.height);
+            // วาดปืน (ตัวอย่าง: กระบอกปืน, ด้าม, ไฟ)
+            // กระบอก
+            gctx.fillStyle = '#888';
+            gctx.fillRect(10, 10, 30, 8);
+            // ปลายปืน
+            gctx.fillStyle = '#ff0';
+            gctx.fillRect(40, 12, 10, 4);
+            // ด้าม
+            gctx.fillStyle = '#333';
+            gctx.fillRect(12, 18, 8, 8);
+            // ไฟ
+            gctx.beginPath();
+            gctx.arc(50, 14, 4, 0, Math.PI * 2);
+            gctx.fillStyle = '#f00';
+            gctx.fill();
+        }
+
+        function updateShopUI() {
+            document.getElementById('shopCoins').textContent = 'เหรียญ: ' + coins;
+            // ปืน
+            document.getElementById('buyGunBtn').disabled = gunOwned || coins < 20;
+            document.getElementById('buyGunBtn').textContent = gunOwned ? 'ซื้อแล้ว' : 'ซื้อ';
+            document.getElementById('equipGunBtn').style.display = gunOwned ? 'inline-block' : 'none';
+            document.getElementById('equipGunBtn').textContent = gunEquipped ? 'ใช้งานอยู่' : 'ใช้งาน';
+            drawGunPreview();
+        }
+
+        document.getElementById('shopBtn').onclick = function() {
+            updateShopUI();
+            document.getElementById('shopContainer').style.display = 'block';
+        };
+        document.getElementById('shopCloseBtn').onclick = function() {
+            document.getElementById('shopContainer').style.display = 'none';
+        };
+        document.getElementById('buyLifeBtn').onclick = function() {
+            if (coins >= 10) {
+                coins -= 10;
+                playerLife++;
+                updateShopUI();
+                document.getElementById('score').textContent = 'Score: ' + score + ' | Coins: ' + coins;
+            }
+        };
+        document.getElementById('buyScoreBtn').onclick = function() {
+            if (coins >= 5) {
+                coins -= 5;
+                score += 10;
+                updateShopUI();
+                document.getElementById('score').textContent = 'Score: ' + score + ' | Coins: ' + coins;
+            }
+        };
+        document.getElementById('buyGunBtn').onclick = function() {
+            if (!gunOwned && coins >= 20) {
+                coins -= 20;
+                gunOwned = true;
+                gunEquipped = true;
+                updateShopUI();
+            }
+        };
+        document.getElementById('equipGunBtn').onclick = function() {
+            gunEquipped = true;
+            updateShopUI();
+        };
+
+        function resetGame() {
+            player.x = canvas.width / 2 - 20;
+            player.y = canvas.height - 60;
+            bullets = [];
+            enemies = [];
+            enemySpeed = 2;
+            enemySpawnInterval = 1200;
+            enemyTimer = 0;
+            score = 0;
+            coins = 0;
+            playerLife = 10;
+            isGameOver = false;
+            gunOwned = false;
+            gunEquipped = false;
+            document.getElementById('score').textContent = 'Score: 0 | Coins: 0';
+            document.getElementById('restartBtn').style.display = 'none';
+            document.getElementById('shopContainer').style.display = 'none';
+            updateShopUI();
+            clearInterval(window.shooterInterval);
+            window.shooterInterval = setInterval(draw, 16);
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            clearInterval(window.shooterInterval);
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#fff';
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 10);
+            ctx.font = '20px Arial';
+            ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2 + 25);
+            ctx.fillText('Coins: ' + coins, canvas.width / 2, canvas.height / 2 + 55);
+            document.getElementById('restartBtn').style.display = 'inline-block';
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = true;
+            if ((e.code === 'Space' || e.code === 'KeyW') && !spacePressed && !isGameOver) {
+                // Shoot
+                if (gunEquipped) {
+                    // ปืนพิเศษ: ยิง 3 นัดกระจาย
+                    for (let i = -1; i <= 1; i++) {
+                        bullets.push({
+                            x: player.x + player.w / 2 - 3 + i * 12,
+                            y: player.y - 10,
+                            w: 6,
+                            h: 16,
+                            speed: 10,
+                            dx: i * 2
+                        });
+                    }
+                } else {
+                    // ปืนธรรมดา
+                    bullets.push({
+                        x: player.x + player.w / 2 - 3,
+                        y: player.y - 10,
+                        w: 6,
+                        h: 16,
+                        speed: 10
+                    });
+                }
+                spacePressed = true;
+            }
+        });
+        document.addEventListener('keyup', function(e) {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
+            if (e.code === 'Space' || e.code === 'KeyW') spacePressed = false;
+        });
+
+        document.getElementById('restartBtn').onclick = function() {
+            resetGame();
+        };
+
+        resetGame();
+    </script>
+</body>
+</html>
